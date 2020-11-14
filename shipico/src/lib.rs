@@ -1,8 +1,7 @@
 use std::f64;
 use wasm_bindgen::prelude::*;
-use web_sys::{CanvasRenderingContext2d, console};
 use wasm_bindgen::JsCast;
-
+use web_sys::*;
 
 // When the `wee_alloc` feature is enabled, this uses `wee_alloc` as the global
 // allocator.
@@ -21,11 +20,11 @@ pub fn start() -> Result<(), JsValue> {
 
     // console::log_1(&JsValue::from_str("Hello world!"));
 
-    let window = web_sys::window().expect("no global `window` exists");
-    let document = window.document().expect("should have a document on window");
-    let body = document.body().expect("document should have a body");
+    let window: Window = web_sys::window().expect("no global `window` exists");
+    let document: Document = window.document().expect("should have a document on window");
+    let body: HtmlElement = document.body().expect("document should have a body");
 
-    let val = document.create_element("p")?;
+    let val: Element = document.create_element("p")?;
     val.set_inner_html("Hello from Rust!");
 
     body.append_child(&val)?;
@@ -35,8 +34,8 @@ pub fn start() -> Result<(), JsValue> {
 
     body.append_child(&canvas)?;
 
-    let canvas: web_sys::HtmlCanvasElement = canvas
-        .dyn_into::<web_sys::HtmlCanvasElement>()
+    let canvas: HtmlCanvasElement = canvas
+        .dyn_into::<HtmlCanvasElement>()
         .map_err(|_| ())
         .unwrap();
 
@@ -48,7 +47,6 @@ pub fn start() -> Result<(), JsValue> {
         .unwrap();
 
     context.begin_path();
-
 
     // Draw the outer circle.
     context
