@@ -1,57 +1,45 @@
-## How to install
+# TODO:
 
-```sh
-npm install
-```
+## Node tree basics:
 
-## How to run in debug mode
+- [ ] Make proper scale from mouse pointer
+- [ ] Line shader or Curve shader for connectors (or maybe just draw lines from textured rects)
+- [ ] Spritesheet code (store packed textures and stuff)
+- [ ] Sprite (rect with a texture)
+- [ ] Sprite with modular pieces (corner, side and center)
+- [ ] Draw text (check `not-fl3` github user, he got miniquad compatible font package somewhere)
 
-```sh
-# Builds the project and opens it in a new browser tab. Auto-reloads when the project changes.
-npm start
-```
+<!---
+In case you wandering why textures.
+Ask yourself a question: we can draw lines, but can we fill them?
+If answer is yes, then i got another one for you:
+You want to write a ton of shader code to make it happen?
 
-## How to build in release mode
+I am not.
+-->
 
-```sh
-# Builds the project and places it into the `dist` folder.
-npm run build
-```
+## Node tree textures:
 
-## How to run unit tests
+- [ ] Circle empty
+- [ ] Circle filled (or maybe a better way to draw circles? I vote for shader, buuut it's more work than plain texture)
+- [ ] Node background
+- [ ] Node side
+- [ ] Node corner
+- [ ] White primitive rect
 
-```sh
-# Runs tests in Firefox
-npm test -- --firefox
+<!---
+More textures to be added. Push them to ./assets/textures/...
+-->
 
-# Runs tests in Chrome
-npm test -- --chrome
+## Meshes:
 
-# Runs tests in Safari
-npm test -- --safari
-```
+- [ ] Rect (really we could just insert rect as code)
 
-## What does each file do?
+## Node tree UI:
 
-- `Cargo.toml` contains the standard Rust metadata. You put your Rust dependencies in here. You must change this file with your details (name, description, version, authors, categories)
+- [ ] Composed Node (with inputs and stuff)
+- [ ] TBA
 
-- `package.json` contains the standard npm metadata. You put your JavaScript dependencies in here. You must change this file with your details (author, name, version)
+## Other:
 
-- `webpack.config.js` contains the Webpack configuration. You shouldn't need to change this, unless you have very special needs.
-
-- The `js` folder contains your JavaScript code (`index.js` is used to hook everything into Webpack, you don't need to change it).
-
-- The `src` folder contains your Rust code.
-
-- The `static` folder contains any files that you want copied as-is into the final build. It contains an `index.html` file which loads the `index.js` file.
-
-- The `tests` folder contains your Rust unit tests.
-
-## Notes
-
-At the moment rust partition of the project uses some unstable features, so be sure to build wasm with nightly
-
-```sh
-rustup override set nightly
-cargo build --target wasm32-unknown-unknown
-```
+- [ ] PR to miniquad with Mat3 support
