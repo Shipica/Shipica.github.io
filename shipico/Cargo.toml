@@ -42,6 +42,7 @@ quad-rand = "0.1.1"
 glam = {version = "0.11.2", features = ["scalar-math"] }
 
 obj = {version = "0.6.2", package = "obj-rs"}
+lyon = {version = "0.16.2", features = ["svg"] }
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires

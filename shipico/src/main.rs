@@ -17,6 +17,7 @@ struct Input {
 struct Stage {
     pipeline: Pipeline,
     bindings: Bindings,
+    index_count: usize,
     transform: Mat3,
     position: Vec2,
     scale: f32,
@@ -32,25 +33,27 @@ impl Stage {
     pub fn new(ctx: &mut Context) -> Stage {
         let (w, h) = ctx.screen_size();
 
-        // Include F.obj model bytes into the binary
-        let model = Cursor::new(include_bytes!("../assets/F.obj"));
-        let input = BufReader::new(model);
-        // Parse it into model information
-        let model: Obj = load_obj(input).unwrap();
+        // // Include F.obj model bytes into the binary
+        // let model = Cursor::new(include_bytes!("../assets/F.obj"));
+        // let input = BufReader::new(model);
+        // // Parse it into model information
+        // let model: Obj = load_obj(input).unwrap();
 
-        // Create vertex buffer from obj vertices
-        let vertex_buffer = Buffer::immutable(ctx, BufferType::VertexBuffer, &model.vertices);
-        // Create index buffer from obj indices
-        let index_buffer = Buffer::immutable(ctx, BufferType::IndexBuffer, &model.indices);
-        // Create framework structure for the model.
-        // `Bindings` are the struct that represents model information.
-        // It can be transferred to the shader at the moment of rendering.
-        let bindings = Bindings {
-            vertex_buffers: vec![vertex_buffer.clone()],
-            index_buffer: index_buffer.clone(),
-            images: vec![],
-        };
+        // // Create vertex buffer from obj vertices
+        // let vertex_buffer = Buffer::immutable(ctx, BufferType::VertexBuffer, &model.vertices);
+        // // Create index buffer from obj indices
+        // let index_buffer = Buffer::immutable(ctx, BufferType::IndexBuffer, &model.indices);
+        // // Create framework structure for the model.
+        // // `Bindings` are the struct that represents model information.
+        // // It can be transferred to the shader at the moment of rendering.
+        // let bindings = Bindings {
+        //     vertex_buffers: vec![vertex_buffer.clone()],
+        //     index_buffer: index_buffer.clone(),
+        //     images: vec![],
+        // };
 
+        let bindings = node(ctx);
+        let index_count = bindings.index_buffer.size() / 2;
         // Create Shader program
         let shader = Shader::new(
             ctx,
@@ -64,8 +67,8 @@ impl Stage {
             ctx,
             &[BufferLayout::default()],
             &[
-                VertexAttribute::new("a_position", VertexFormat::Float3),
-                VertexAttribute::new("a_norm", VertexFormat::Float3),
+                VertexAttribute::new("a_position", VertexFormat::Float2),
+                // VertexAttribute::new("a_norm", VertexFormat::Float3),
             ],
             shader,
             PipelineParams {
@@ -81,6 +84,7 @@ impl Stage {
         Stage {
             pipeline,
             bindings,
+            index_count,
             input: Input {
                 mouse_down: false,
                 last_mouse_pos: Vec2::zero(),
@@ -223,7 +227,7 @@ impl EventHandler for Stage {
         // Push transform matrix to the uniforms of the shader
         ctx.apply_uniforms(&offscreen_shader::Uniforms { mvp });
         // Draw 1 instance of the model containing 12 triangles (36 indices) of the first (0) model in the bindings
-        ctx.draw(0, 36, 1);
+        ctx.draw(0, self.index_count as i32, 1);
         // Do some framework related job
         // It's nessesary to do after each pass.
         ctx.end_render_pass();
@@ -293,5 +297,44 @@ mod m3 {
              0.,   h,  0.,
             -1.,  1.,  1.,
         ])
+    }
+}
+
+use lyon::math::{rect, Point};
+use lyon::tessellation::basic_shapes::*;
+use lyon::tessellation::geometry_builder::simple_builder;
+use lyon::tessellation::{FillOptions, VertexBuffers};
+
+fn node(ctx: &mut Context) -> Bindings {
+    let mut geometry: VertexBuffers<Point, u16> = VertexBuffers::new();
+
+    // @Thought
+    // Tolerance from zoom maybe? (try playing with value to understand what i mean)
+    //
+    // I though it would be good to tesselate all the meshes one time on the start
+    // but if we will change tolerance with every wheel move we will have to regenerate
+    // mesh data. It will be awful from memory point of view.
+    //
+    // Way better, IMHO, use some kind of LOD system (have to be written).
+    // That way we will generate N meshes for every little thing at the start
+    // and will swap them as zoom changes.
+    let options = FillOptions::tolerance(0.05);
+
+    fill_rounded_rectangle(
+        &rect(0.0, 0.0, 200.0, 100.0),
+        &BorderRadii::new_all_same(10.),
+        &options,
+        &mut simple_builder(&mut geometry),
+    )
+    .unwrap();
+
+    Bindings {
+        vertex_buffers: vec![Buffer::immutable(
+            ctx,
+            BufferType::VertexBuffer,
+            &geometry.vertices,
+        )],
+        index_buffer: Buffer::immutable(ctx, BufferType::IndexBuffer, &geometry.indices),
+        images: vec![],
     }
 }
