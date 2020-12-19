@@ -1,3 +1,27 @@
+# How to develop:
+
+To ease development a little, there's a couple of useful tools.
+
+Cargo watch rebuilds project each time some change in sources occured:
+
+    $: cd shipico
+    $: cargo watch -x build
+
+Basic http server will serve wasm files to your browser:
+
+    $: cd shipico
+    $: basic-http-server .
+
+To install them run:
+
+    $: cargo install watch
+    $: cargo install basic-http-server
+
+After you will launch them (probably in different terminals) you can visit `localhost:4040/deploy/index.html` to
+face results of your work.
+
+Each time you will change sources, wait half a second and reload window for changes to take effect.
+
 # TODO:
 
 ## Node tree basics:
