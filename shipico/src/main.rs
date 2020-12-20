@@ -14,14 +14,19 @@ struct Input {
     last_mouse_pos: Vec2,
 }
 
+struct Camera {
+    transform: Mat3,
+    current_width: f32,
+    current_height: f32,
+}
+
 struct Stage {
     pipeline: Pipeline,
     bindings: Bindings,
-    index_count: usize,
-    transform: Mat3,
     position: Vec2,
     scale: f32,
     input: Input,
+    camera: Camera,
 }
 
 const PERFECT_SIZE: (f32, f32) = (1000., 1000.);
@@ -53,7 +58,6 @@ impl Stage {
         // };
 
         let bindings = node(ctx);
-        let index_count = bindings.index_buffer.size() / 2;
         // Create Shader program
         let shader = Shader::new(
             ctx,
@@ -78,20 +82,20 @@ impl Stage {
             },
         );
 
-        let w_ = w / PERFECT_SIZE.0;
-        let h_ = h / PERFECT_SIZE.1;
-
         Stage {
             pipeline,
             bindings,
-            index_count,
             input: Input {
                 mouse_down: false,
                 last_mouse_pos: Vec2::zero(),
             },
             position: Vec2::zero(),
             scale: 1.,
-            transform: m3::identity() * m3::projection(w_, h_),
+            camera: Camera {
+                transform: m3::identity(),
+                current_width: w,
+                current_height: h,
+            },
         }
     }
 }
@@ -162,7 +166,7 @@ impl EventHandler for Stage {
             let screen_size = vec2(screen_size.0, -screen_size.1);
             let mut delta = self.input.last_mouse_pos - mouse_pos;
             delta = delta * 2.0 / screen_size;
-            self.transform = m3::translation(-delta) * self.transform;
+            self.camera.transform = m3::translation(-delta) * self.camera.transform;
         }
 
         // Be sure to save mouse position every time it moves.
@@ -191,28 +195,23 @@ impl EventHandler for Stage {
         // and work with them.
         //
         // TODO: Make scale work
-        self.transform = m3::scaling(zoom) * self.transform;
+        self.camera.transform = m3::scaling(zoom) * self.camera.transform;
     }
 
     fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
-        // On resize it's nessesary to do some math to rescale projection.
+        // Resize now works from top left corner.
         //
-        // Current self.transform already contains projection information, so you have to
-        // first remove it like `self.transform * m3::projection(1. / old_w, 1. / old_h)`.
+        // It means that objects that were stuck at left border of the screen will
+        // retain their `x` position after resize.
         //
-        // `old_w` and `old_h` not like really old width and height. It's relation of old width
-        // and height to the perfect screen size (`PERFECT_SIZE`). It's calculated like `screen_w / PERFECT_SIZE.0`.
-        //
-        // After old projection is removed it's time to calculate new one.
-        // `self.transform * m3::projection(new_w, new_h)`
-        // `new_w` and `new_h` are relations of current width and height to the perfect screen size.
-        //
-        // This should work i hope.
+        // Maybe it's better to resize objects keeping center position
     }
 
     fn draw(&mut self, ctx: &mut Context) {
-        // Make our camera view matrix smaller for `F` model to fit in the screen
-        let mvp = self.transform * m3::scaling(0.1);
+        let (w, h) = ctx.screen_size();
+        let w = w / PERFECT_SIZE.0;
+        let h = h / PERFECT_SIZE.1;
+        let mvp = self.camera.transform * m3::projection(w, h) * m3::scaling(0.01);
 
         // Clear color buffer with white color
         ctx.begin_default_pass(PassAction::Clear {
@@ -227,7 +226,7 @@ impl EventHandler for Stage {
         // Push transform matrix to the uniforms of the shader
         ctx.apply_uniforms(&offscreen_shader::Uniforms { mvp });
         // Draw 1 instance of the model containing 12 triangles (36 indices) of the first (0) model in the bindings
-        ctx.draw(0, self.index_count as i32, 1);
+        ctx.draw(0, (self.bindings.index_buffer.size() / 2) as i32, 1);
         // Do some framework related job
         // It's nessesary to do after each pass.
         ctx.end_render_pass();
