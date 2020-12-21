@@ -1,10 +1,7 @@
 #![feature(unsized_fn_params)]
 
-use glam::{vec2, vec3, Mat3, Mat4, Quat, Vec2};
+use glam::{vec2, vec4, Mat3, Vec2, Vec4};
 use miniquad::*;
-use obj::{load_obj, Obj};
-use std::io::BufReader;
-use std::{fs::File, io::Cursor};
 
 mod shader;
 use shader::*;
@@ -15,18 +12,17 @@ struct Input {
 }
 
 struct Camera {
-    transform: Mat3,
-    current_width: f32,
-    current_height: f32,
+    position: Vec2,
+    zoom: f32,
 }
 
 struct Stage {
-    pipeline: Pipeline,
-    bindings: Bindings,
-    position: Vec2,
-    scale: f32,
+    node_pipeline: Pipeline,
+    workbench_pipeline: Pipeline,
+    node: Node,
     input: Input,
     camera: Camera,
+    workbench: Workbench,
 }
 
 const PERFECT_SIZE: (f32, f32) = (1000., 1000.);
@@ -36,30 +32,7 @@ impl Stage {
     // This function will be executed once at the start of the program.
     // Right after the `main` is called.
     pub fn new(ctx: &mut Context) -> Stage {
-        let (w, h) = ctx.screen_size();
-
-        // // Include F.obj model bytes into the binary
-        // let model = Cursor::new(include_bytes!("../assets/F.obj"));
-        // let input = BufReader::new(model);
-        // // Parse it into model information
-        // let model: Obj = load_obj(input).unwrap();
-
-        // // Create vertex buffer from obj vertices
-        // let vertex_buffer = Buffer::immutable(ctx, BufferType::VertexBuffer, &model.vertices);
-        // // Create index buffer from obj indices
-        // let index_buffer = Buffer::immutable(ctx, BufferType::IndexBuffer, &model.indices);
-        // // Create framework structure for the model.
-        // // `Bindings` are the struct that represents model information.
-        // // It can be transferred to the shader at the moment of rendering.
-        // let bindings = Bindings {
-        //     vertex_buffers: vec![vertex_buffer.clone()],
-        //     index_buffer: index_buffer.clone(),
-        //     images: vec![],
-        // };
-
-        let bindings = node(ctx);
-        // Create Shader program
-        let shader = Shader::new(
+        let node_shader = Shader::new(
             ctx,
             offscreen_shader::VERTEX,
             offscreen_shader::FRAGMENT,
@@ -67,14 +40,31 @@ impl Stage {
         )
         .unwrap();
 
-        let pipeline = Pipeline::with_params(
+        let node_pipeline = Pipeline::with_params(
             ctx,
             &[BufferLayout::default()],
-            &[
-                VertexAttribute::new("a_position", VertexFormat::Float2),
-                // VertexAttribute::new("a_norm", VertexFormat::Float3),
-            ],
-            shader,
+            &[VertexAttribute::new("a_position", VertexFormat::Float2)],
+            node_shader,
+            PipelineParams {
+                primitive_type: PrimitiveType::Triangles,
+                cull_face: CullFace::Nothing,
+                ..Default::default()
+            },
+        );
+
+        let workbench_shader = Shader::new(
+            ctx,
+            workbench_shader::VERTEX,
+            workbench_shader::FRAGMENT,
+            workbench_shader::meta(),
+        )
+        .unwrap();
+
+        let workbench_pipeline = Pipeline::with_params(
+            ctx,
+            &[BufferLayout::default()],
+            &[VertexAttribute::new("a_position", VertexFormat::Float2)],
+            workbench_shader,
             PipelineParams {
                 primitive_type: PrimitiveType::Triangles,
                 cull_face: CullFace::Nothing,
@@ -83,18 +73,17 @@ impl Stage {
         );
 
         Stage {
-            pipeline,
-            bindings,
+            node_pipeline,
+            workbench_pipeline,
+            node: Node::new(ctx),
+            workbench: Workbench::new(ctx),
             input: Input {
                 mouse_down: false,
                 last_mouse_pos: Vec2::zero(),
             },
-            position: Vec2::zero(),
-            scale: 1.,
             camera: Camera {
-                transform: m3::identity(),
-                current_width: w,
-                current_height: h,
+                position: Vec2::zero(),
+                zoom: 1.0,
             },
         }
     }
@@ -166,7 +155,7 @@ impl EventHandler for Stage {
             let screen_size = vec2(screen_size.0, -screen_size.1);
             let mut delta = self.input.last_mouse_pos - mouse_pos;
             delta = delta * 2.0 / screen_size;
-            self.camera.transform = m3::translation(-delta) * self.camera.transform;
+            self.camera.position -= delta;
         }
 
         // Be sure to save mouse position every time it moves.
@@ -195,7 +184,7 @@ impl EventHandler for Stage {
         // and work with them.
         //
         // TODO: Make scale work
-        self.camera.transform = m3::scaling(zoom) * self.camera.transform;
+        self.camera.zoom *= zoom;
     }
 
     fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
@@ -211,7 +200,9 @@ impl EventHandler for Stage {
         let (w, h) = ctx.screen_size();
         let w = w / PERFECT_SIZE.0;
         let h = h / PERFECT_SIZE.1;
-        let mvp = self.camera.transform * m3::projection(w, h) * m3::scaling(0.01);
+        let mvp = m3::projection(w, h)
+            * m3::translation(self.camera.position)
+            * m3::scaling(self.camera.zoom);
 
         // Clear color buffer with white color
         ctx.begin_default_pass(PassAction::Clear {
@@ -220,13 +211,12 @@ impl EventHandler for Stage {
             stencil: None,
         });
         // Prepare shaders (gl.useProgram), set face culling, depth tests and such shit
-        ctx.apply_pipeline(&self.pipeline);
-        // Push vertices, indices and textures of the model to the shader
-        ctx.apply_bindings(&self.bindings);
-        // Push transform matrix to the uniforms of the shader
-        ctx.apply_uniforms(&offscreen_shader::Uniforms { mvp });
-        // Draw 1 instance of the model containing 12 triangles (36 indices) of the first (0) model in the bindings
-        ctx.draw(0, (self.bindings.index_buffer.size() / 2) as i32, 1);
+        ctx.apply_pipeline(&self.workbench_pipeline);
+        self.workbench.draw(&self.camera, ctx);
+
+        ctx.apply_pipeline(&self.node_pipeline);
+        self.node.draw(mvp, ctx);
+
         // Do some framework related job
         // It's nessesary to do after each pass.
         ctx.end_render_pass();
@@ -297,43 +287,228 @@ mod m3 {
             -1.,  1.,  1.,
         ])
     }
+
+    /*
+        translate: function(m, tx, ty) {
+      return m3.multiply(m, m3.translation(tx, ty));
+    },
+
+    rotate: function(m, angleInRadians) {
+      return m3.multiply(m, m3.rotation(angleInRadians));
+    },
+
+    scale: function(m, sx, sy) {
+      return m3.multiply(m, m3.scaling(sx, sy));
+    },
+      */
 }
 
-use lyon::math::{rect, Point};
-use lyon::tessellation::basic_shapes::*;
-use lyon::tessellation::geometry_builder::simple_builder;
-use lyon::tessellation::{FillOptions, VertexBuffers};
+use lyon::{
+    math::{rect, Point},
+    tessellation::{
+        basic_shapes::*, geometry_builder::simple_builder, FillOptions, StrokeOptions,
+        VertexBuffers,
+    },
+};
 
-fn node(ctx: &mut Context) -> Bindings {
-    let mut geometry: VertexBuffers<Point, u16> = VertexBuffers::new();
+struct Workbench {
+    rect: Bindings,
+    background_color: Vec4,
+    line_color: Vec4,
+}
 
-    // @Thought
-    // Tolerance from zoom maybe? (try playing with value to understand what i mean)
-    //
-    // I though it would be good to tesselate all the meshes one time on the start
-    // but if we will change tolerance with every wheel move we will have to regenerate
-    // mesh data. It will be awful from memory point of view.
-    //
-    // Way better, IMHO, use some kind of LOD system (have to be written).
-    // That way we will generate N meshes for every little thing at the start
-    // and will swap them as zoom changes.
-    let options = FillOptions::tolerance(0.05);
+impl Workbench {
+    fn new(ctx: &mut Context) -> Workbench {
+        let mut geometry: VertexBuffers<Point, u16> = VertexBuffers::new();
+        let size = 2.;
+        fill_rectangle(
+            &rect(size / -2., size / -2., size, size),
+            &FillOptions::tolerance(0.1),
+            &mut simple_builder(&mut geometry),
+        )
+        .unwrap();
 
-    fill_rounded_rectangle(
-        &rect(0.0, 0.0, 200.0, 100.0),
-        &BorderRadii::new_all_same(10.),
-        &options,
-        &mut simple_builder(&mut geometry),
-    )
-    .unwrap();
+        let rect = Bindings {
+            vertex_buffers: vec![Buffer::immutable(
+                ctx,
+                BufferType::VertexBuffer,
+                &geometry.vertices,
+            )],
+            index_buffer: Buffer::immutable(ctx, BufferType::IndexBuffer, &geometry.indices),
+            images: vec![],
+        };
 
-    Bindings {
-        vertex_buffers: vec![Buffer::immutable(
-            ctx,
-            BufferType::VertexBuffer,
-            &geometry.vertices,
-        )],
-        index_buffer: Buffer::immutable(ctx, BufferType::IndexBuffer, &geometry.indices),
-        images: vec![],
+        Workbench {
+            rect,
+            background_color: rgba_from_hex("#70798c"),
+            line_color: rgba_from_hex("#fff"),
+        }
+    }
+
+    fn draw(&self, camera: &Camera, ctx: &mut Context) {
+        // Push vertices, indices and textures of the model to the shader
+        ctx.apply_bindings(&self.rect);
+        // Push transform matrix to the uniforms of the shader
+        ctx.apply_uniforms(&workbench_shader::Uniforms {
+            position: camera.position,
+            zoom: camera.zoom,
+            back_color: self.background_color,
+            line_color: self.line_color,
+            resolution: vec2(ctx.screen_size().0, ctx.screen_size().1),
+        });
+        // Draw 1 instance of the model containing 12 triangles (36 indices) of the first (0) model in the bindings
+        ctx.draw(0, (self.rect.index_buffer.size() / 2) as i32, 1);
+    }
+}
+
+struct Node {
+    border: Bindings,
+    border_color: Vec4,
+
+    background: Bindings,
+    background_color: Vec4,
+}
+
+impl Node {
+    fn new(ctx: &mut Context) -> Node {
+        // @Thought
+        // Tolerance from zoom maybe? (try playing with value to understand what i mean)
+        //
+        // I though it would be good to tesselate all the meshes one time on the start
+        // but if we will change tolerance with every wheel move we will have to regenerate
+        // mesh data. It will be awful from memory point of view.
+        //
+        // Way better, IMHO, use some kind of LOD system (have to be written).
+        // That way we will generate N meshes for every little thing at the start
+        // and will swap them as zoom changes.
+        let border_radii = BorderRadii::new_all_same(10.);
+        let rect = rect(0.0, 0.0, 200.0, 100.0);
+
+        let background = {
+            let mut geometry: VertexBuffers<Point, u16> = VertexBuffers::new();
+
+            let options = FillOptions::tolerance(0.05);
+
+            fill_rounded_rectangle(
+                &rect,
+                &border_radii,
+                &options,
+                &mut simple_builder(&mut geometry),
+            )
+            .unwrap();
+
+            Bindings {
+                vertex_buffers: vec![Buffer::immutable(
+                    ctx,
+                    BufferType::VertexBuffer,
+                    &geometry.vertices,
+                )],
+                index_buffer: Buffer::immutable(ctx, BufferType::IndexBuffer, &geometry.indices),
+                images: vec![],
+            }
+        };
+
+        let border = {
+            let mut geometry: VertexBuffers<Point, u16> = VertexBuffers::new();
+
+            let options = StrokeOptions::tolerance(0.05);
+
+            stroke_rounded_rectangle(
+                &rect,
+                &border_radii,
+                &options,
+                &mut simple_builder(&mut geometry),
+            )
+            .unwrap();
+
+            Bindings {
+                vertex_buffers: vec![Buffer::immutable(
+                    ctx,
+                    BufferType::VertexBuffer,
+                    &geometry.vertices,
+                )],
+                index_buffer: Buffer::immutable(ctx, BufferType::IndexBuffer, &geometry.indices),
+                images: vec![],
+            }
+        };
+
+        Node {
+            border,
+            border_color: rgba_from_hex("#f5f1ed"),
+            background,
+            background_color: rgba_from_hex("#25232388"),
+        }
+    }
+
+    fn draw(&self, mvp: Mat3, ctx: &mut Context) {
+        // Push vertices, indices and textures of the model to the shader
+        ctx.apply_bindings(&self.background);
+        // Push transform matrix to the uniforms of the shader
+        ctx.apply_uniforms(&offscreen_shader::Uniforms {
+            mvp,
+            color: self.background_color,
+        });
+        // Draw 1 instance of the model containing 12 triangles (36 indices) of the first (0) model in the bindings
+        ctx.draw(0, (self.background.index_buffer.size() / 2) as i32, 1);
+
+        // Push vertices, indices and textures of the model to the shader
+        ctx.apply_bindings(&self.border);
+        // Push transform matrix to the uniforms of the shader
+        ctx.apply_uniforms(&offscreen_shader::Uniforms {
+            mvp,
+            color: self.border_color,
+        });
+        // Draw 1 instance of the model containing 12 triangles (36 indices) of the first (0) model in the bindings
+        ctx.draw(0, (self.border.index_buffer.size() / 2) as i32, 1);
+    }
+}
+
+/// Color hex to vec4.
+///
+/// ### Examples:
+///
+/// `#fff` -> `vec4(1., 1., 1., 1.)`
+///
+/// `#C0C0C0` -> `vec4(1., 1., 1., 1.)`
+///
+/// `#ffffff00` -> `vec4(1., 1., 1., 0.)`
+///
+/// ### Panics:
+/// If provided string is not valid color hex.
+#[rustfmt::skip]
+fn rgba_from_hex(hex: &str) -> Vec4 {
+    let len = hex.len();
+    assert!(&[4, 5, 7, 9].contains(&len));
+
+    use std::u8;
+
+    match len {
+        4 => {
+            let r = u8::from_str_radix(&format!("{}{}", &hex[1..2], &hex[1..2]), 16).unwrap() as f32 / 255.;
+            let g = u8::from_str_radix(&format!("{}{}", &hex[2..3], &hex[2..3]), 16).unwrap() as f32 / 255.;
+            let b = u8::from_str_radix(&format!("{}{}", &hex[3..4], &hex[3..4]), 16).unwrap() as f32 / 255.;
+            vec4(r, g, b, 1.)
+        }
+        5 => {
+            let r = u8::from_str_radix(&format!("{}{}", &hex[1..2], &hex[1..2]), 16).unwrap() as f32 / 255.;
+            let g = u8::from_str_radix(&format!("{}{}", &hex[2..3], &hex[2..3]), 16).unwrap() as f32 / 255.;
+            let b = u8::from_str_radix(&format!("{}{}", &hex[3..4], &hex[3..4]), 16).unwrap() as f32 / 255.;
+            let a = u8::from_str_radix(&format!("{}{}", &hex[4..5], &hex[4..5]), 16).unwrap() as f32 / 255.;
+            vec4(r, g, b, a)
+        }
+        7 => {
+            let r = u8::from_str_radix(&hex[1..3], 16).unwrap() as f32 / 255.;
+            let g = u8::from_str_radix(&hex[3..5], 16).unwrap() as f32 / 255.;
+            let b = u8::from_str_radix(&hex[5..7], 16).unwrap() as f32 / 255.;
+            vec4(r, g, b, 1.)
+        }
+        9 => {
+            let r = u8::from_str_radix(&hex[1..3], 16).unwrap() as f32 / 255.;
+            let g = u8::from_str_radix(&hex[3..5], 16).unwrap() as f32 / 255.;
+            let b = u8::from_str_radix(&hex[5..7], 16).unwrap() as f32 / 255.;
+            let a = u8::from_str_radix(&hex[7..9], 16).unwrap() as f32 / 255.;
+            vec4(r, g, b, a)
+        }
+        _ => unreachable!()
     }
 }

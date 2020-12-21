@@ -1,8 +1,7 @@
 #version 100
 precision mediump float;
-varying lowp vec4 ppos;
+uniform vec4 u_color;
 
 void main() {
-    // gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-    gl_FragColor = abs(ppos);
+    gl_FragColor = u_color;
 }
